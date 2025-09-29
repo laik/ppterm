@@ -1,0 +1,30 @@
+{
+  "name": "ppterm",
+  "version": "1.0.0",
+  "description": "A minimal web-based terminal application",
+  "scripts": {
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev:backend": "cd ppterm-backend && npm run dev",
+    "dev:frontend": "cd ppterm-frontend && npm run dev",
+    "build": "cd ppterm-frontend && npm run build",
+    "start:backend": "cd ppterm-backend && npm start",
+    "install:all": "npm install && cd ppterm-backend && npm install && cd ../ppterm-frontend && npm install",
+    "docker:build": "docker build -t ppterm .",
+    "docker:run": "docker run -p 3001:3001 ppterm",
+    "docker:compose": "docker-compose up -d"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  },
+  "keywords": [
+    "terminal",
+    "web",
+    "react",
+    "typescript",
+    "nodejs",
+    "websocket",
+    "xterm"
+  ],
+  "author": "",
+  "license": "MIT"
+}
