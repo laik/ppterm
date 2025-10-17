@@ -12,6 +12,19 @@ export interface TerminalMessage {
   message?: string;
   timestamp?: string;
   cloned?: boolean;
+  image?: string;
+  isSandbox?: boolean;
+  // SSH specific
+  host?: string;
+  port?: number;
+  username?: string;
+  password?: string;
+  privateKey?: string;
+  passphrase?: string;
+  term?: string;
+  params?: Record<string, unknown>;
+  duplicated?: boolean;
+  reconnected?: boolean;
 }
 
 export interface TerminalSession {
@@ -143,7 +156,77 @@ export class WebSocketService {
     });
   }
 
+  public createSandbox(image: string, cols: number = 80, rows: number = 30, title?: string) {
+    console.log('Creating sandbox with:', { image, cols, rows, title });
+    this.send({
+      type: 'create_sandbox',
+      image,
+      cols,
+      rows,
+      title
+    });
+  }
+
+  public createSSH(params: {
+    host: string;
+    port?: number;
+    username: string;
+    password?: string;
+    privateKey?: string;
+    passphrase?: string;
+    cols?: number;
+    rows?: number;
+    term?: string;
+  }) {
+    console.log('Creating SSH session:', { host: params.host, username: params.username });
+    this.send({
+      type: 'create_ssh',
+      ...params
+    });
+  }
+
+  public duplicateSSH(sessionId: string) {
+    console.log('Duplicating SSH session:', sessionId);
+    this.send({
+      type: 'duplicate_ssh',
+      sessionId
+    });
+  }
+
+  public sendSSHInput(sessionId: string, data: string) {
+    this.send({
+      type: 'ssh_input',
+      sessionId,
+      data
+    });
+  }
+
+  public resizeSSH(sessionId: string, cols: number, rows: number) {
+    this.send({
+      type: 'ssh_resize',
+      sessionId,
+      cols,
+      rows
+    });
+  }
+
+  public closeSSH(sessionId: string) {
+    this.send({
+      type: 'close_ssh',
+      sessionId
+    });
+  }
+
+  public reconnectSSH(sessionId: string) {
+    console.log('Reconnecting SSH session:', sessionId);
+    this.send({
+      type: 'reconnect_ssh',
+      sessionId
+    });
+  }
+
   public cloneTerminal(originalSessionId: string, cloneType: 'simple' | 'share' | 'new' | 'window', cols: number = 80, rows: number = 30) {
+    console.log('Cloning terminal:', { originalSessionId, cloneType, cols, rows });
     this.send({
       type: 'clone_terminal',
       originalSessionId,

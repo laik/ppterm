@@ -22,52 +22,6 @@ body {
   color: #ffffff;
 }
 
-/* Header */
-.header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 10px 20px;
-  background: #2d2d2d;
-  border-bottom: 1px solid #404040;
-  min-height: 50px;
-}
-
-.title {
-  font-size: 18px;
-  font-weight: bold;
-  color: #ffffff;
-}
-
-.connection-status {
-  display: flex;
-  align-items: center;
-  gap: 15px;
-}
-
-.status-indicator {
-  font-size: 14px;
-  display: flex;
-  align-items: center;
-}
-
-.status-indicator.connected {
-  color: #50fa7b;
-}
-
-.status-indicator.disconnected {
-  color: #ff5555;
-}
-
-.active-sessions {
-  font-size: 12px;
-  color: #f1fa8c;
-  background: rgba(241, 250, 140, 0.1);
-  padding: 4px 8px;
-  border-radius: 12px;
-  border: 1px solid rgba(241, 250, 140, 0.3);
-}
-
 /* Terminal Container */
 .terminal-container {
   display: flex;
@@ -127,18 +81,58 @@ body {
   cursor: pointer;
   font-size: 14px;
   transition: background-color 0.2s;
+  white-space: nowrap;
 }
 
-.kube-context-btn {
-  padding: 10px 12px;
-  background: #28a745;
-  color: white;
-  border: none;
+.new-terminal-dropdown {
+  position: relative;
+  flex: 1;
+}
+
+.dropdown-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin-top: 5px;
+  background: #2d2d2d;
+  border: 1px solid #404040;
   border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  z-index: 1000;
+  overflow: hidden;
+}
+
+.dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 15px;
   cursor: pointer;
-  font-size: 12px;
   transition: background-color 0.2s;
-  white-space: nowrap;
+  border-bottom: 1px solid #404040;
+}
+
+.dropdown-item:last-child {
+  border-bottom: none;
+}
+
+.dropdown-item:hover {
+  background: #37373d;
+}
+
+.dropdown-icon {
+  font-size: 16px;
+  width: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dropdown-text {
+  flex: 1;
+  font-size: 14px;
+  color: #ffffff;
 }
 
 .kube-context-btn:hover:not(:disabled) {
@@ -234,6 +228,86 @@ body {
 }
 
 /* Hints */
+.status-bar {
+  padding: 8px 15px;
+  border-top: 1px solid #404040;
+  background: #2d2d2d;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.status-bar.collapsed {
+  padding: 10px 5px;
+  justify-content: center;
+}
+
+.status-badge {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.status-badge-icon {
+  font-size: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.05);
+  transition: all 0.3s ease;
+}
+
+.status-badge-icon.connected {
+  color: #50fa7b;
+  background: rgba(80, 250, 123, 0.1);
+  box-shadow: 0 0 10px rgba(80, 250, 123, 0.3);
+}
+
+.status-badge-icon.disconnected {
+  color: #ff5555;
+  background: rgba(255, 85, 85, 0.1);
+  box-shadow: 0 0 10px rgba(255, 85, 85, 0.3);
+}
+
+.status-badge-count {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 11px;
+  font-weight: bold;
+  color: #ffffff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+  z-index: 1;
+}
+
+.status-bar .status-indicator {
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+}
+
+.status-bar .status-indicator.connected {
+  color: #50fa7b;
+}
+
+.status-bar .status-indicator.disconnected {
+  color: #ff5555;
+}
+
+.status-bar .session-count {
+  font-size: 11px;
+  color: #cccccc;
+  opacity: 0.8;
+}
+
 .hints {
   padding: 15px;
   border-top: 1px solid #404040;
@@ -244,14 +318,18 @@ body {
   display: none;
 }
 
+.sidebar.collapsed .status-bar {
+  display: flex;
+}
+
 /* Collapsed Terminal Icons */
 .collapsed-terminal-icons {
   flex: 1;
-  padding: 10px 0;
+  padding: 15px 0;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
   overflow-y: auto;
 }
 
@@ -268,6 +346,7 @@ body {
   transition: all 0.2s ease;
   border: 2px solid transparent;
   margin: 0 auto;
+  flex-shrink: 0;
 }
 
 .terminal-icon:hover {
@@ -590,4 +669,124 @@ body {
   font-size: 12px;
   color: #cccccc;
   opacity: 0.8;
+}
+
+/* Sandbox Modal Styles */
+.sandbox-input-group {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 20px;
+  align-items: center;
+}
+
+.sandbox-input-group label {
+  font-size: 14px;
+  color: #ffffff;
+  white-space: nowrap;
+}
+
+.custom-image-input {
+  flex: 1;
+  padding: 10px 12px;
+  background: #404040;
+  border: 1px solid #505050;
+  border-radius: 4px;
+  color: #ffffff;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.custom-image-input:focus {
+  border-color: #007acc;
+}
+
+.custom-image-input::placeholder {
+  color: #888888;
+}
+
+.create-sandbox-btn {
+  padding: 10px 20px;
+  background: #ff9800;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  white-space: nowrap;
+  transition: background-color 0.2s;
+}
+
+.create-sandbox-btn:hover:not(:disabled) {
+  background: #f57c00;
+}
+
+.create-sandbox-btn:disabled {
+  background: #404040;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.section-title {
+  font-size: 13px;
+  color: #cccccc;
+  margin-bottom: 10px;
+  font-weight: 500;
+}
+
+.image-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.image-item-button {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: #404040;
+  border: 1px solid #505050;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-align: left;
+}
+
+.image-item-button:hover {
+  background: #505050;
+  border-color: #007acc;
+}
+
+.image-icon {
+  font-size: 16px;
+}
+
+.image-name {
+  flex: 1;
+  font-size: 14px;
+  color: #ffffff;
+  font-weight: 500;
+}
+
+.image-delete-btn {
+  width: 28px;
+  height: 38px;
+  background: #ff5555;
+  border: none;
+  border-radius: 4px;
+  color: white;
+  font-size: 20px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.image-delete-btn:hover {
+  background: #ff3333;
 }

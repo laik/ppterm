@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "build:legacy": "tsc && vite build --config vite.config.legacy.ts",
     "lint": "eslint .",
     "preview": "vite preview"
   },

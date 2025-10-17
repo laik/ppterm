@@ -10,6 +10,9 @@ interface TerminalSession {
   title: string;
   created: Date;
   kubeContext?: string;
+  isSSH?: boolean;
+  isSandbox?: boolean;
+  sshParams?: Record<string, unknown>;
 }
 
 const WEBSOCKET_URL = 'ws://localhost:3001/ws';
@@ -22,6 +25,19 @@ function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [kubeContexts, setKubeContexts] = useState<string[]>([]);
   const [showKubeContextModal, setShowKubeContextModal] = useState(false);
+  const [showSandboxModal, setShowSandboxModal] = useState(false);
+  const [containerImages, setContainerImages] = useState<string[]>([]);
+  const [customImage, setCustomImage] = useState('');
+  const [showNewTerminalDropdown, setShowNewTerminalDropdown] = useState(false);
+  const [showSSHModal, setShowSSHModal] = useState(false);
+  const [sshForm, setSSHForm] = useState({
+    host: '',
+    port: 22,
+    username: '',
+    password: '',
+    privateKey: '',
+    authMethod: 'password' as 'password' | 'key'
+  });
   const [contextMenu, setContextMenu] = useState<{
     sessionId: string;
     x: number;
@@ -31,13 +47,37 @@ function App() {
   // WebSocket event handlers
   useEffect(() => {
     const handleTerminalCreated = (message: TerminalMessage) => {
-      console.log('Terminal created:', message);
+      console.log('[App] Terminal created event received:', message);
       if (message.sessionId && message.title) {
         const newTerminal: TerminalSession = {
           sessionId: message.sessionId,
           title: message.title,
-          created: new Date()
+          created: new Date(),
+          isSandbox: message.isSandbox || false
         };
+        console.log('[App] Adding terminal to state:', newTerminal);
+        setTerminals(prev => {
+          console.log('[App] Previous terminals:', prev.length);
+          return [...prev, newTerminal];
+        });
+        setActiveTerminalId(message.sessionId);
+        console.log('[App] Terminal added successfully, total:', terminals.length + 1);
+      } else {
+        console.warn('[App] Invalid terminal created message:', message);
+      }
+    };
+
+    const handleSSHCreated = (message: TerminalMessage) => {
+      console.log('[App] SSH session created event received:', message);
+      if (message.sessionId && message.title) {
+        const newTerminal: TerminalSession = {
+          sessionId: message.sessionId,
+          title: message.title,
+          created: new Date(),
+          isSSH: true,
+          sshParams: message.params
+        };
+        console.log('[App] Adding SSH terminal to state:', newTerminal);
         setTerminals(prev => [...prev, newTerminal]);
         setActiveTerminalId(message.sessionId);
       }
@@ -56,7 +96,34 @@ function App() {
       }
     };
 
+    const handleSSHData = (message: TerminalMessage) => {
+      console.log('SSH data received:', message.sessionId, message.data?.length);
+      if (message.sessionId && message.data) {
+        const globalThis = window as unknown as { terminals?: Record<string, XTerminal> };
+        const terminal = globalThis.terminals?.[message.sessionId];
+        if (terminal && typeof terminal.write === 'function') {
+          terminal.write(message.data);
+        } else {
+          console.warn('SSH terminal not found:', message.sessionId);
+        }
+      }
+    };
+
     const handleTerminalClosed = (message: TerminalMessage) => {
+      if (message.sessionId) {
+        setTerminals(prev => {
+          const filtered = prev.filter(t => t.sessionId !== message.sessionId);
+          if (activeTerminalId === message.sessionId && filtered.length > 0) {
+            setActiveTerminalId(filtered[0].sessionId);
+          } else if (filtered.length === 0) {
+            setActiveTerminalId(null);
+          }
+          return filtered;
+        });
+      }
+    };
+
+    const handleSSHClosed = (message: TerminalMessage) => {
       if (message.sessionId) {
         setTerminals(prev => {
           const filtered = prev.filter(t => t.sessionId !== message.sessionId);
@@ -77,9 +144,20 @@ function App() {
 
     const handleConnection = (isConnected: boolean) => {
       console.log('WebSocket connection status:', isConnected);
+      const wasConnected = connected;
       setConnected(isConnected);
-      if (isConnected && terminals.length === 0) {
-        // Create initial terminal when connected
+      
+      if (isConnected && wasConnected === false) {
+        // Reconnecting after disconnect - clear all stale terminals
+        // because server has lost all session state on restart
+        console.log('Connection restored after disconnect, clearing stale terminals');
+        setTerminals([]);
+        setActiveTerminalId(null);
+        // Create initial terminal
+        console.log('Creating initial terminal...');
+        wsService.createTerminal(80, 30, 'Terminal 1');
+      } else if (isConnected && terminals.length === 0) {
+        // Initial connection with no terminals
         console.log('Creating initial terminal...');
         wsService.createTerminal(80, 30, 'Terminal 1');
       }
@@ -87,15 +165,21 @@ function App() {
 
     // Register event listeners
     wsService.on('terminal_created', handleTerminalCreated);
+    wsService.on('ssh_created', handleSSHCreated);
     wsService.on('data', handleTerminalData);
+    wsService.on('ssh_data', handleSSHData);
     wsService.on('terminal_closed', handleTerminalClosed);
+    wsService.on('ssh_closed', handleSSHClosed);
     wsService.on('error', handleError);
     wsService.onConnection(handleConnection);
 
     return () => {
       wsService.off('terminal_created', handleTerminalCreated);
+      wsService.off('ssh_created', handleSSHCreated);
       wsService.off('data', handleTerminalData);
+      wsService.off('ssh_data', handleSSHData);
       wsService.off('terminal_closed', handleTerminalClosed);
+      wsService.off('ssh_closed', handleSSHClosed);
       wsService.off('error', handleError);
       wsService.offConnection(handleConnection);
     };
@@ -103,13 +187,25 @@ function App() {
 
   // Handle terminal input
   const handleTerminalInput = useCallback((sessionId: string, data: string) => {
-    wsService.sendInput(sessionId, data);
-  }, [wsService]);
+    // Check if this is an SSH session
+    const terminal = terminals.find(t => t.sessionId === sessionId);
+    if (terminal?.isSSH) {
+      wsService.sendSSHInput(sessionId, data);
+    } else {
+      wsService.sendInput(sessionId, data);
+    }
+  }, [wsService, terminals]);
 
   // Handle terminal resize
   const handleTerminalResize = useCallback((sessionId: string, cols: number, rows: number) => {
-    wsService.resizeTerminal(sessionId, cols, rows);
-  }, [wsService]);
+    // Check if this is an SSH session
+    const terminal = terminals.find(t => t.sessionId === sessionId);
+    if (terminal?.isSSH) {
+      wsService.resizeSSH(sessionId, cols, rows);
+    } else {
+      wsService.resizeTerminal(sessionId, cols, rows);
+    }
+  }, [wsService, terminals]);
 
   // Create new terminal with optional kubernetes context
   const createNewTerminal = (kubeContext?: string) => {
@@ -129,10 +225,46 @@ function App() {
     setShowKubeContextModal(false);
   };
 
+  // Show sandbox modal
+  const showSandboxSelection = () => {
+    setShowSandboxModal(true);
+  };
+
+  // Create sandbox with selected image
+  const createSandboxWithImage = (image: string) => {
+    wsService.createSandbox(image, 80, 30);
+    setShowSandboxModal(false);
+    setCustomImage('');
+  };
+
+  // Delete a user-defined image
+  const deleteUserImage = async (image: string, event: React.MouseEvent) => {
+    event.stopPropagation();
+    if (window.confirm(`Delete "${image}" from your saved images?`)) {
+      try {
+        const response = await fetch(`http://localhost:3001/api/container-images/${encodeURIComponent(image)}`, {
+          method: 'DELETE'
+        });
+        const data = await response.json();
+        if (data.images) {
+          setContainerImages(data.images);
+        }
+      } catch (error) {
+        console.error('Error deleting image:', error);
+      }
+    }
+  };
+
   // Close terminal
   const closeTerminal = (sessionId: string) => {
     if (terminals.length > 1 || window.confirm('Are you sure you want to close the last terminal?')) {
-      wsService.closeTerminal(sessionId);
+      // Check if this is an SSH session
+      const terminal = terminals.find(t => t.sessionId === sessionId);
+      if (terminal?.isSSH) {
+        wsService.closeSSH(sessionId);
+      } else {
+        wsService.closeTerminal(sessionId);
+      }
     }
   };
 
@@ -159,9 +291,9 @@ function App() {
 
   // Rename terminal
   const renameTerminal = (sessionId: string, newTitle: string) => {
-    setTerminals(prev => 
-      prev.map(terminal => 
-        terminal.sessionId === sessionId 
+    setTerminals(prev =>
+      prev.map(terminal =>
+        terminal.sessionId === sessionId
           ? { ...terminal, title: newTitle }
           : terminal
       )
@@ -177,13 +309,14 @@ function App() {
   useEffect(() => {
     const handleClickOutside = () => {
       setContextMenu(null);
+      setShowNewTerminalDropdown(false);
     };
 
-    if (contextMenu) {
+    if (contextMenu || showNewTerminalDropdown) {
       document.addEventListener('click', handleClickOutside);
       return () => document.removeEventListener('click', handleClickOutside);
     }
-  }, [contextMenu]);
+  }, [contextMenu, showNewTerminalDropdown]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -279,32 +412,35 @@ function App() {
         console.error('Error loading kubectl contexts:', error);
       }
     };
-    
+
+    const loadContainerImages = async () => {
+      try {
+        const response = await fetch('http://localhost:3001/api/container-images');
+        const data = await response.json();
+        if (data.images) {
+          setContainerImages(data.images);
+        }
+        // if not found, notify user
+        if (!data.images) {
+          alert('No container images found. Please check your configuration.');
+        }
+      } catch (error) {
+        console.error('Error loading container images:', error);
+      }
+    };
+
     if (connected) {
       loadKubectlContexts();
+      loadContainerImages();
     }
   }, [connected]);
 
   return (
     <div className="app">
-      <div className="header">
-        <div className="title">PPTerm</div>
-        <div className="connection-status">
-          <span className={`status-indicator ${connected ? 'connected' : 'disconnected'}`}>
-            {connected ? '● Connected' : '● Disconnected'}
-          </span>
-          {terminals.length > 0 && (
-            <span className="active-sessions">
-              {terminals.length} Active Session{terminals.length > 1 ? 's' : ''}
-            </span>
-          )}
-        </div>
-      </div>
-
       <div className="terminal-container">
         <div className={`sidebar ${sidebarCollapsed ? 'collapsed' : ''}`}>
           <div className="sidebar-header">
-            <button 
+            <button
               className="sidebar-toggle"
               onClick={toggleSidebar}
               title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
@@ -313,24 +449,55 @@ function App() {
             </button>
             {!sidebarCollapsed && (
               <>
-                <button 
-                  className="new-terminal-btn"
-                  onClick={() => createNewTerminal()}
-                  disabled={!connected}
-                  title="Create new terminal (Ctrl/Cmd + T)"
-                >
-                  + New Terminal
-                </button>
-                {kubeContexts.length > 0 && (
+                <div className="new-terminal-dropdown">
                   <button
-                    className="kube-context-btn"
-                    onClick={showKubeContextSelection}
+                    className="new-terminal-btn"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowNewTerminalDropdown(!showNewTerminalDropdown);
+                    }}
                     disabled={!connected}
-                    title="Create terminal with kubectl context"
+                    title="Create new terminal"
                   >
-                    ⚙️ K8s
+                    + New ▼
                   </button>
-                )}
+                  {showNewTerminalDropdown && (
+                    <div className="dropdown-menu" onClick={(e) => e.stopPropagation()}>
+                      <div
+                        className="dropdown-item"
+                        onClick={() => {
+                          createNewTerminal();
+                          setShowNewTerminalDropdown(false);
+                        }}
+                      >
+                        <span className="dropdown-icon">⌘</span>
+                        <span className="dropdown-text">Terminal</span>
+                      </div>
+                      <div
+                        className="dropdown-item"
+                        onClick={() => {
+                          showSandboxSelection();
+                          setShowNewTerminalDropdown(false);
+                        }}
+                      >
+                        <span className="dropdown-icon">📦</span>
+                        <span className="dropdown-text">Sandbox</span>
+                      </div>
+                      {kubeContexts.length > 0 && (
+                        <div
+                          className="dropdown-item"
+                          onClick={() => {
+                            showKubeContextSelection();
+                            setShowNewTerminalDropdown(false);
+                          }}
+                        >
+                          <span className="dropdown-icon">⚙️</span>
+                          <span className="dropdown-text">Kubernetes</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
               </>
             )}
           </div>
@@ -357,11 +524,11 @@ function App() {
                 <div className="hint">Ctrl/Cmd + B: Toggle Sidebar</div>
                 <div className="hint">Ctrl/Cmd + 1-9: Switch Terminal</div>
                 <div className="hint">Double-click tab: Rename</div>
-                <div className="hint">Right-click tab: Clone options</div>
+                <div className="hint">Right-click tab: Duplicate</div>
               </div>
             </>
           )}
-          
+
           {sidebarCollapsed && (
             <div className="collapsed-terminal-icons">
               {terminals.map((terminal, index) => {
@@ -381,6 +548,19 @@ function App() {
               })}
             </div>
           )}
+
+          <div className={`status-bar ${sidebarCollapsed ? 'collapsed' : ''}`}>
+            <div className="status-badge">
+              <span className={`status-badge-icon ${connected ? 'connected' : 'disconnected'}`}>
+                {connected ? '●' : '●'}
+              </span>
+              {terminals.length > 0 && (
+                <span className="status-badge-count">
+                  {terminals.length}
+                </span>
+              )}
+            </div>
+          </div>
         </div>
 
         <div className="main-content">
@@ -423,36 +603,20 @@ function App() {
 
       {/* Context Menu */}
       {contextMenu && (
-        <div 
+        <div
           className="context-menu"
-          style={{ 
-            left: contextMenu.x, 
-            top: contextMenu.y 
+          style={{
+            left: contextMenu.x,
+            top: contextMenu.y
           }}
         >
-          <div 
+          <div
             className="context-menu-item"
-            onClick={() => cloneTerminal(contextMenu.sessionId, 'simple')}
+            onClick={() => {
+              cloneTerminal(contextMenu.sessionId, 'simple');
+            }}
           >
-            Simple Clone
-          </div>
-          <div 
-            className="context-menu-item"
-            onClick={() => cloneTerminal(contextMenu.sessionId, 'share')}
-          >
-            Shared Session
-          </div>
-          <div 
-            className="context-menu-item"
-            onClick={() => cloneTerminal(contextMenu.sessionId, 'new')}
-          >
-            New Session
-          </div>
-          <div 
-            className="context-menu-item"
-            onClick={() => cloneTerminal(contextMenu.sessionId, 'window')}
-          >
-            Window Clone
+            🔄 Duplicate Session
           </div>
         </div>
       )}
@@ -463,7 +627,7 @@ function App() {
           <div className="modal-content">
             <div className="modal-header">
               <h3>Select Kubernetes Context</h3>
-              <button 
+              <button
                 className="modal-close"
                 onClick={() => setShowKubeContextModal(false)}
               >
@@ -490,6 +654,74 @@ function App() {
                   </button>
                 ))}
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Sandbox Image Selection Modal */}
+      {showSandboxModal && (
+        <div className="modal-overlay">
+          <div className="modal-content">
+            <div className="modal-header">
+              <h3>Create Sandbox Terminal</h3>
+              <button
+                className="modal-close"
+                onClick={() => { setShowSandboxModal(false); setCustomImage(''); }}
+              >
+                ×
+              </button>
+            </div>
+            <div className="modal-body">
+              <div className="sandbox-input-group">
+                <label htmlFor="custom-image">Image Name:</label>
+                <input
+                  id="custom-image"
+                  type="text"
+                  className="custom-image-input"
+                  placeholder="e.g., alpine:latest, ubuntu:22.04"
+                  value={customImage}
+                  onChange={(e) => setCustomImage(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && customImage.trim()) {
+                      createSandboxWithImage(customImage.trim());
+                    }
+                  }}
+                />
+                <button
+                  className="create-sandbox-btn"
+                  onClick={() => customImage.trim() && createSandboxWithImage(customImage.trim())}
+                  disabled={!customImage.trim()}
+                >
+                  Create
+                </button>
+              </div>
+              {containerImages.length > 0 && (
+                <div className="context-list">
+                  <p className="section-title">Recent Images:</p>
+                  {containerImages.map((image) => (
+                    <div
+                      key={image}
+                      className="image-item"
+                    >
+                      <button
+                        className="image-item-button"
+                        onClick={() => createSandboxWithImage(image)}
+                      >
+                        <span className="image-icon">📦</span>
+                        <span className="image-name">{image}</span>
+                      </button>
+                      <button
+                        className="image-delete-btn"
+                        onClick={(e) => deleteUserImage(image, e)}
+                        title="Delete this image"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>
