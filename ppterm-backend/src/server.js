@@ -110,6 +110,13 @@ class ContainerManager {
     const runtime = await this.detectRuntime();
     console.log(`Pulling image: ${image} using ${runtime}`);
     
+    // check if image exists
+    const images = await this.listImages();
+    if (images.includes(image)) {
+      console.log(`Image ${image} already exists`);
+      return { success: true, output: '' };
+    }
+    
     try {
       const { stdout, stderr } = await execAsync(`${runtime} pull ${image}`);
       console.log('Image pulled successfully:', stdout);
