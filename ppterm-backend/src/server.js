@@ -10,6 +10,7 @@ const { exec } = require('child_process');
 const { promisify } = require('util');
 const fs = require('fs').promises;
 const { SSHSessionManager } = require('./SSHSessionManager');
+const { log } = require('console');
 
 const execAsync = promisify(exec);
 
@@ -112,11 +113,12 @@ class ContainerManager {
     
     // check if image exists
     const images = await this.listImages();
+    console.log('Check Images:', images,image);
     if (images.includes(image)) {
       console.log(`Image ${image} already exists`);
       return { success: true, output: '' };
     }
-    
+
     try {
       const { stdout, stderr } = await execAsync(`${runtime} pull ${image}`);
       console.log('Image pulled successfully:', stdout);

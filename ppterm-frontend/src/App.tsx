@@ -321,6 +321,14 @@ function App() {
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't intercept common browser shortcuts
+      if (e.key === 'f' && (e.ctrlKey || e.metaKey)) {
+        return; // Let browser handle Ctrl+F search
+      }
+      if ((e.key === 'c' || e.key === 'v' || e.key === 'z') && (e.ctrlKey || e.metaKey)) {
+        return; // Let browser handle copy/paste/undo
+      }
+      
       if (e.ctrlKey || e.metaKey) {
         switch (e.key) {
           case 't':
